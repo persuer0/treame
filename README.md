@@ -196,21 +196,49 @@ colcon build --packages-select \
 
 ### 快速上手
 
-#### 数据采集（LeRobot + Rerun 可视化）
+#### 安装 LeRobot 扩展（首次运行一次）
 
 ```bash
 conda activate trime
 
-# 采集刷牙任务，episode 0，30Hz，启动 Rerun 实时预览
-python scripts/collect_data.py \
+# 将 songzero7dof robot 驱动和 drag_passthrough teleop
+# symlink 进 lerobot 源码并 patch __init__.py
+bash scripts/install_lerobot_ext.sh
+```
+
+#### 数据采集（拖动示教 + Rerun 可视化）
+
+确保松灵 Nero 已通电，控制器 WiFi 已连接（默认 IP `192.168.31.1`）：
+
+```bash
+conda activate trime
+
+# 采集刷牙任务，50 条 episode，启动 Rerun 实时预览
+python scripts/record_songzero.py \
     --task brushing \
-    --episode 0 \
-    --output data/lerobot \
+    --repo-id <hf_username>/trime-brushing \
+    --episodes 50 \
+    --host 192.168.31.1 \
     --rerun
 ```
 
-数据保存至 `data/lerobot/brushing/episode_0000.hdf5`，
-Rerun viewer 实时展示摄像头帧与关节状态曲线。
+采集期间机械臂处于拖动示教模式（顺从模式），物理操作臂到目标位置即可。
+键盘快捷键：`Space` 提前结束当前 episode，`r` 重录，`q` 停止采集。
+
+数据自动保存为 LeRobot 格式（`data/lerobot/<repo-id>/`），
+采集结束后自动上传 HuggingFace Hub（加 `--no-push` 跳过）。
+
+**采集架构说明**
+
+```
+Songzero7Dof (WiFi WebSocket)          DragPassthrough (virtual teleop)
+  ├─ REST /api/login → JWT               ├─ 无硬件，纯软件
+  ├─ GET  /api/estop / cleanError        ├─ set_robot(robot) 注入 robot 引用
+  ├─ GET  /api/setting/setCtrlMode=3     └─ get_action() → robot.get_joint_state()
+  ├─ GET  /api/set/enable → 7 joints              ↓
+  ├─ GET  /api/teach → 拖动示教模式      当前关节角 → 作为 action label 存入 dataset
+  └─ WebSocket :9090 → /highSpeedStates（实时关节位置）
+```
 
 #### π0.5 推理
 
@@ -236,7 +264,7 @@ python scripts/infer_pi05.py \
 
 ```
 tri.me/
-├── action_control/          # 机械臂控制 SDK (pyAgxArm)
+├── action_control/          # 机械臂控制 SDK (pyAgxArm / CAN)
 │   └── base/pyAgxArm/
 │       ├── api/             # 工厂接口与驱动配置
 │       ├── protocols/       # CAN 协议、消息定义、Nero 驱动
@@ -249,11 +277,20 @@ tri.me/
 │   ├── face_landmarks_detection/  # 人脸关键点检测
 │   ├── hobot_shm/           # 共享内存传输
 │   └── websocket/           # 实时 Web 可视化
-└── scripts/                 # 数据采集与推理脚本
-    ├── setup_env.sh         # 一键环境初始化
-    ├── can_up.sh            # 激活 SocketCAN 接口
-    ├── collect_data.py      # LeRobot 采集 + Rerun 可视化
-    └── infer_pi05.py        # π0.5 推理
+├── lerobot_ext/             # LeRobot 扩展（drop-in patch）
+│   ├── robots/
+│   │   └── songzero7dof/    # Songzero 7DOF WiFi robot driver
+│   │       ├── songzero7dof.py        # WebSocket 状态读取 + REST 控制
+│   │       └── config_songzero7dof.py # IP / 摄像头配置
+│   └── teleoperators/
+│       └── drag_passthrough/          # 拖动示教虚拟 teleop
+│           └── drag_passthrough.py    # 读取 robot 关节角作为 action
+└── scripts/                 # 环境与采集脚本
+    ├── setup_env.sh          # 一键 conda 环境初始化
+    ├── can_up.sh             # 激活 SocketCAN 接口
+    ├── install_lerobot_ext.sh # 将扩展 symlink 进 lerobot 源码
+    ├── record_songzero.py    # 拖动示教采集（LeRobot 格式）
+    └── infer_pi05.py         # π0.5 推理
 ```
 
 ---
