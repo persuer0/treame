@@ -115,13 +115,91 @@ huggingface-cli download physical-intelligence/pi0.5 --local-dir checkpoints/pi0
 
 ---
 
-### 快速上手
+### 环境配置
 
-#### 1. 数据采集（LeRobot + Rerun 可视化）
+#### 系统要求
+
+| 项目 | 要求 |
+|------|------|
+| OS | Ubuntu 22.04 LTS |
+| Python | 3.10 |
+| CUDA | 12.1（推理必须；采集可用 CPU） |
+| 硬件 | USB-CAN 转换器 + 松灵 Nero 机械臂 |
+
+#### Step 1 — 一键初始化 Python 环境
 
 ```bash
-# 安装依赖
-pip install lerobot rerun-sdk h5py
+# 创建 conda 环境 + 安装 PyTorch / lerobot(pi0) / Rerun / h5py
+bash scripts/setup_env.sh
+
+# 激活环境（后续所有命令均在此环境下运行）
+conda activate trime
+```
+
+`setup_env.sh` 做的事：
+- 创建 `trime` conda 环境（Python 3.10）
+- 安装 PyTorch 2.3.1（CUDA 12.1）
+- 从源码安装 lerobot，含 `pi0` extra（π0/π0.5 推理支持）
+- 安装 `rerun-sdk`、`h5py`、`opencv-python`、`huggingface_hub`
+- 安装系统级 `can-utils`
+
+#### Step 2 — 激活 CAN 总线（连接机械臂）
+
+```bash
+# 需要 root；默认接口 can0，波特率 1Mbps
+sudo bash scripts/can_up.sh
+
+# 验证连通性
+candump can0 &   # 应能看到 Nero 心跳帧
+```
+
+无硬件时用虚拟 CAN 测试：
+
+```bash
+sudo ip link add dev vcan0 type vcan && sudo ip link set up vcan0
+```
+
+#### Step 3 — 下载基座权重
+
+```bash
+# 需要先在 HuggingFace 接受 physical-intelligence 的使用协议
+huggingface-cli login   # 输入 HF token
+
+huggingface-cli download physical-intelligence/pi0.5 \
+    --local-dir checkpoints/pi0.5
+```
+
+> π0 轻量版（消融实验用）：
+> ```bash
+> huggingface-cli download physical-intelligence/pi0 \
+>     --local-dir checkpoints/pi0
+> ```
+
+#### Step 4 — 视觉栈（ROS2，可选）
+
+感知层基于 ROS2 Humble，仅在需要实时人体关键点检测时安装：
+
+```bash
+# 安装 ROS2 Humble（参考官方文档）
+# https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html
+
+# 编译视觉包
+source /opt/ros/humble/setup.bash
+colcon build --packages-select \
+    hobot_usb_cam hobot_codec \
+    mono2d_body_detection face_landmarks_detection \
+    hobot_shm websocket \
+    --base-paths vision/
+```
+
+---
+
+### 快速上手
+
+#### 数据采集（LeRobot + Rerun 可视化）
+
+```bash
+conda activate trime
 
 # 采集刷牙任务，episode 0，30Hz，启动 Rerun 实时预览
 python scripts/collect_data.py \
@@ -131,16 +209,21 @@ python scripts/collect_data.py \
     --rerun
 ```
 
-数据将保存为 HDF5 格式至 `data/lerobot/brushing/episode_0000.hdf5`，
-Rerun viewer 同步展示摄像头帧与关节状态曲线。
+数据保存至 `data/lerobot/brushing/episode_0000.hdf5`，
+Rerun viewer 实时展示摄像头帧与关节状态曲线。
 
-#### 2. π0.5 推理
+#### π0.5 推理
 
 ```bash
-# 安装依赖
-pip install lerobot torch torchvision
+conda activate trime
 
-# 实时推理（自动从 HuggingFace 下载权重）
+# 使用本地权重推理（Step 3 已下载）
+python scripts/infer_pi05.py \
+    --task brushing \
+    --checkpoint checkpoints/pi0.5 \
+    --device cuda
+
+# 或直接从 HuggingFace Hub 加载（首次自动下载）
 python scripts/infer_pi05.py \
     --task brushing \
     --checkpoint physical-intelligence/pi0.5 \
@@ -167,6 +250,8 @@ tri.me/
 │   ├── hobot_shm/           # 共享内存传输
 │   └── websocket/           # 实时 Web 可视化
 └── scripts/                 # 数据采集与推理脚本
+    ├── setup_env.sh         # 一键环境初始化
+    ├── can_up.sh            # 激活 SocketCAN 接口
     ├── collect_data.py      # LeRobot 采集 + Rerun 可视化
     └── infer_pi05.py        # π0.5 推理
 ```
