@@ -97,23 +97,78 @@ tri.me 采用**三层解耦架构**，感知、控制、执行各自独立，形
 
 ---
 
+### 基座模型权重
+
+tri.me 使用 [π0.5](https://huggingface.co/physical-intelligence/pi0.5) 作为策略网络基座。
+
+| 模型 | 链接 | 用途 |
+|------|------|------|
+| π0.5 | [physical-intelligence/pi0.5](https://huggingface.co/physical-intelligence/pi0.5) | 护理任务策略微调基座 |
+| π0   | [physical-intelligence/pi0](https://huggingface.co/physical-intelligence/pi0) | 轻量替代 / 消融实验 |
+
+下载方式：
+
+```bash
+# 需要先接受 HuggingFace 上的使用协议
+huggingface-cli download physical-intelligence/pi0.5 --local-dir checkpoints/pi0.5
+```
+
+---
+
+### 快速上手
+
+#### 1. 数据采集（LeRobot + Rerun 可视化）
+
+```bash
+# 安装依赖
+pip install lerobot rerun-sdk h5py
+
+# 采集刷牙任务，episode 0，30Hz，启动 Rerun 实时预览
+python scripts/collect_data.py \
+    --task brushing \
+    --episode 0 \
+    --output data/lerobot \
+    --rerun
+```
+
+数据将保存为 HDF5 格式至 `data/lerobot/brushing/episode_0000.hdf5`，
+Rerun viewer 同步展示摄像头帧与关节状态曲线。
+
+#### 2. π0.5 推理
+
+```bash
+# 安装依赖
+pip install lerobot torch torchvision
+
+# 实时推理（自动从 HuggingFace 下载权重）
+python scripts/infer_pi05.py \
+    --task brushing \
+    --checkpoint physical-intelligence/pi0.5 \
+    --device cuda
+```
+
+---
+
 ### 项目结构
 
 ```
-treame/
+tri.me/
 ├── action_control/          # 机械臂控制 SDK (pyAgxArm)
 │   └── base/pyAgxArm/
 │       ├── api/             # 工厂接口与驱动配置
 │       ├── protocols/       # CAN 协议、消息定义、Nero 驱动
 │       ├── utiles/          # 坐标变换 (SE3)、数值编解码
 │       └── demos/           # 示例脚本
-└── vision/                  # 视觉感知栈（ROS2）
-    ├── hobot_usb_cam/       # 摄像头驱动
-    ├── hobot_codec/         # 硬件编解码
-    ├── mono2d_body_detection/     # 人体骨骼检测
-    ├── face_landmarks_detection/  # 人脸关键点检测
-    ├── hobot_shm/           # 共享内存传输
-    └── websocket/           # 实时 Web 可视化
+├── vision/                  # 视觉感知栈（ROS2）
+│   ├── hobot_usb_cam/       # 摄像头驱动
+│   ├── hobot_codec/         # 硬件编解码
+│   ├── mono2d_body_detection/     # 人体骨骼检测
+│   ├── face_landmarks_detection/  # 人脸关键点检测
+│   ├── hobot_shm/           # 共享内存传输
+│   └── websocket/           # 实时 Web 可视化
+└── scripts/                 # 数据采集与推理脚本
+    ├── collect_data.py      # LeRobot 采集 + Rerun 可视化
+    └── infer_pi05.py        # π0.5 推理
 ```
 
 ---
